@@ -747,7 +747,7 @@
 
 #if defined(STM32F40_41xxx)
 #define UARTS_COUNT                                             6
-#else defined(STM32F4)
+#elif defined(STM32F4)
 #define UARTS_COUNT                                             8
 #endif
 
