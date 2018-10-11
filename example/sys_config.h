@@ -52,7 +52,7 @@
 
 #define USBD_IO_SIZE                                        128
 
-#define USBD_CDC_ACM_CLASS                                  1
+#define USBD_CDC_ACM_CLASS                                  0
 #define USBD_RNDIS_CLASS                                    0
 #define USBD_HID_KBD_CLASS                                  0
 #define USBD_CCID_CLASS                                     0
@@ -68,7 +68,7 @@
 #define USBD_CDC_ACM_DEBUG_FLOW                             0
 
 //------------------------ RNDIS Device class -----------------------------------------
-#define USBD_RNDIS_DEBUG                                    1
+#define USBD_RNDIS_DEBUG                                    0
 #define USBD_RNDIS_DEBUG_REQUESTS                           0
 #define USBD_RNDIS_DEBUG_FLOW                               0
 

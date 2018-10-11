@@ -66,6 +66,7 @@ static inline void stat()
 
 static inline void app_setup_dbg()
 {
+/*
     BAUD baudrate;
     pin_enable(DBG_CONSOLE_TX_PIN, STM32_GPIO_MODE_OUTPUT_AF_PUSH_PULL_50MHZ, false);
     uart_open(DBG_CONSOLE, UART_MODE_STREAM | UART_TX_STREAM);
@@ -77,13 +78,13 @@ static inline void app_setup_dbg()
     uart_setup_printk(DBG_CONSOLE);
     uart_setup_stdout(DBG_CONSOLE);
     open_stdout();
+*/
 }
 
 static inline void app_init(APP* app)
 {
     gpio_enable_pin(B14, GPIO_MODE_OUT);
     gpio_reset_pin(B14);
-
 
     app_setup_dbg();
     app->timer = timer_create(0, HAL_APP);
@@ -105,22 +106,22 @@ void app()
     IPC ipc;
 
     app_init(&app);
-    comm_init(&app);
-    net_init(&app);
+    // comm_init(&app);
+    // net_init(&app);
 
     for (;;)
     {
         ipc_read(&ipc);
         switch (HAL_GROUP(ipc.cmd))
         {
-        case HAL_USBD:
-            comm_request(&app, &ipc);
-            break;
-        case HAL_IP:
-        case HAL_UDP:
-        case HAL_TCP:
-            net_request(&app, &ipc);
-            break;
+        // case HAL_USBD:
+        //     comm_request(&app, &ipc);
+        //     break;
+        // case HAL_IP:
+        // case HAL_UDP:
+        // case HAL_TCP:
+        //     net_request(&app, &ipc);
+        //     break;
         case HAL_APP:
             app_timeout(&app);
             break;

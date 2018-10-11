@@ -8,6 +8,7 @@
 #define STM32_CONFIG_H
 
 //---------------------- fast drivers definitions -----------------------------------
+#define I2C_COUNT 1
 #define STM32_ADC_DRIVER                        0
 #define STM32_DAC_DRIVER                        0
 #define STM32_WDT_DRIVER                        0
@@ -16,9 +17,9 @@
 #define STM32_I2C_DRIVER                        0
 #define STM32_UART_DRIVER                       0
 #define STM32_RTC_DRIVER                        0
-#define STM32_USB_DRIVER                        1
+#define STM32_USB_DRIVER                        0
 #define STM32_CAN_DRIVER                        0
-#define STM32_ETH_DRIVER                        1
+#define STM32_ETH_DRIVER                        0
 //------------------------------ CORE ------------------------------------------------
 //disable only for power saving if no EXTI or remap is used
 #define SYSCFG_ENABLED                          1
