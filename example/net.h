@@ -14,9 +14,12 @@
 #include "../../rexos/userspace/ip.h"
 
 typedef struct {
-    HANDLE tcpip, listener, connection;
+    HANDLE tcpip, web;
     IO* io;
     IP remote_addr;
+
+    int get_count;
+    int current_value;
 } NET;
 
 void net_init(APP* app);

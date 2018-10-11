@@ -13,7 +13,6 @@
 #include <stdint.h>
 
 typedef struct _APP {
-    COMM comm;
     NET net;
     HANDLE timer;
     HANDLE usbd;

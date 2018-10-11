@@ -19,7 +19,6 @@
 #include "../../rexos/userspace/power.h"
 #include "../../rexos/midware/pinboard.h"
 #include "app_private.h"
-#include "comm.h"
 #include "net.h"
 #include "config.h"
 #include "../../rexos/userspace/adc.h"
@@ -105,7 +104,6 @@ void app()
     IPC ipc;
 
     app_init(&app);
-    comm_init(&app);
     net_init(&app);
 
     for (;;)
@@ -113,19 +111,28 @@ void app()
         ipc_read(&ipc);
         switch (HAL_GROUP(ipc.cmd))
         {
-        case HAL_USBD:
-            comm_request(&app, &ipc);
-            break;
-        case HAL_IP:
-        case HAL_UDP:
-        case HAL_TCP:
-            net_request(&app, &ipc);
-            break;
+
+        //??? When USB goes off and on, how things should be handled?
+
+        // I assume RNDIS will be retranslating USB events to HAL_IP 
+        // case HAL_USBD:
+        //     comm_request(&app, &ipc);
+        //     break;
+
+        // ??? I assume this part of the stack is handled by HTTP server, at least for the port 80 
+        // case HAL_IP:
+        // case HAL_UDP:
+        // case HAL_TCP:
+        //     net_request(&app, &ipc);
+        //     break;
+
         case HAL_APP:
             app_timeout(&app);
             break;
+            
         default:
-            error(ERROR_NOT_SUPPORTED);
+            // HTTP-specific events on top of the stack handled by net_request
+            net_request(&app, &ipc);
             break;
         }
         ipc_write(&ipc);

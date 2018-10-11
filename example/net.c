@@ -7,6 +7,7 @@
 #include "net.h"
 #include "app_private.h"
 #include "config.h"
+#include "usb_desc.h"
 #include "../../rexos/userspace/eth.h"
 #include "../../rexos/userspace/ip.h"
 #include "../../rexos/userspace/icmp.h"
@@ -15,186 +16,109 @@
 #include "../../rexos/userspace/stm32/stm32_driver.h"
 #include "../../rexos/userspace/stdio.h"
 #include "../../rexos/userspace/pin.h"
+#include "../../rexos/userspace/rndis.h"
+#include "../../rexos/userspace/web.h"
 #include <string.h>
 
 static const MAC __MAC =                    {{0x20, 0xD9, 0x97, 0xA1, 0x90, 0x42}};
 static const IP __IP =                      {{192, 168, 8, 126}};
 
-static const IP __HOST_IP =                 {{192, 168, 8, 1}};
-#define PING_COUNT                          5
-
 void net_init(APP* app)
 {
-    pin_enable(ETH_MDC, STM32_GPIO_MODE_OUTPUT_AF_PUSH_PULL_50MHZ, false);
-    pin_enable(ETH_MDIO, STM32_GPIO_MODE_OUTPUT_AF_PUSH_PULL_50MHZ, false);
+    app->usbd = usbd_create(USB_PORT_NUM, USBD_PROCESS_SIZE, USBD_PROCESS_PRIORITY);
+    ack(app->usbd, HAL_REQ(HAL_USBD, USBD_REGISTER_HANDLER), 0, 0, 0);
 
-    pin_enable(ETH_TX_CLK, STM32_GPIO_MODE_INPUT_FLOAT, false);
-    pin_enable(ETH_TX_EN, STM32_GPIO_MODE_OUTPUT_AF_PUSH_PULL_50MHZ, false);
-    pin_enable(ETH_TX_D0, STM32_GPIO_MODE_OUTPUT_AF_PUSH_PULL_50MHZ, false);
-    pin_enable(ETH_TX_D1, STM32_GPIO_MODE_OUTPUT_AF_PUSH_PULL_50MHZ, false);
-    pin_enable(ETH_TX_D2, STM32_GPIO_MODE_OUTPUT_AF_PUSH_PULL_50MHZ, false);
-    pin_enable(ETH_TX_D3, STM32_GPIO_MODE_OUTPUT_AF_PUSH_PULL_50MHZ, false);
+    usbd_register_const_descriptor(app->usbd, &__DEVICE_DESCRIPTOR, 0, 0);
+    usbd_register_const_descriptor(app->usbd, &__CONFIGURATION_DESCRIPTOR, 0, 0);
+    usbd_register_const_descriptor(app->usbd, &__STRING_WLANGS, 0, 0);
+    usbd_register_const_descriptor(app->usbd, &__STRING_MANUFACTURER, 1, 0x0409);
+    usbd_register_const_descriptor(app->usbd, &__STRING_PRODUCT, 2, 0x0409);
+    usbd_register_const_descriptor(app->usbd, &__STRING_SERIAL, 3, 0x0409);
+    usbd_register_const_descriptor(app->usbd, &__STRING_DEFAULT, 4, 0x0409);
 
-    pin_enable(ETH_RX_CLK, STM32_GPIO_MODE_INPUT_FLOAT, false);
-    pin_enable(ETH_RX_DV, STM32_GPIO_MODE_INPUT_FLOAT, false);
-    pin_enable(ETH_RX_ER, STM32_GPIO_MODE_INPUT_FLOAT, false);
-    pin_enable(ETH_RX_D0, STM32_GPIO_MODE_INPUT_FLOAT, false);
-    pin_enable(ETH_RX_D1, STM32_GPIO_MODE_INPUT_FLOAT, false);
-    pin_enable(ETH_RX_D2, STM32_GPIO_MODE_INPUT_FLOAT, false);
-    pin_enable(ETH_RX_D3, STM32_GPIO_MODE_INPUT_FLOAT, false);
+    // ??? USBD_IFACE is very mysterious to me
+    // ??? should I call this after IPC_OPEN ack?
+    rndis_set_link(app->usbd, USBD_IFACE(0,0), ETH_AUTO);
 
-    pin_enable(ETH_COL, STM32_GPIO_MODE_INPUT_FLOAT, false);
-    pin_enable(ETH_CRS_WKUP, STM32_GPIO_MODE_INPUT_FLOAT, false);
+    // ??? as I know, vendor id should be 16 bits, but there we have 24 bits
+    // I set 0x0525 vendor id obtained from usb_desc.h, but I don't know the implications, chances are it can be rejected by Windows
+    rndis_set_vendor_id(app->usbd, USBD_IFACE(0,0), 0, 0x05, 0x25);
+    rndis_set_vendor_description(app->usbd, USBD_IFACE(0,0), "Default");
 
+    // ??? I assume this has to be called, maybe not
     eth_set_mac(KERNEL_HANDLE, 0, &__MAC);
 
+    // ??? maybe it is (should be) automatically called by eth_set_mac
+    rndis_set_host_mac(app->usbd, USBD_IFACE(0,0), &__MAC);
+
+    // ??? should I ever call this ack stuff? If yes, when?
+    ack(app->usbd, HAL_REQ(HAL_USBD, IPC_OPEN), USB_PORT_NUM, 0, 0);
+
     app->net.tcpip = tcpip_create(TCPIP_PROCESS_SIZE, TCPIP_PROCESS_PRIORITY, ETH_PHY_ADDRESS);
-    ip_set(app->net.tcpip, &__IP);
+    ip_set(app->net.tcpip, &__IP);  // assume DHCP is not used
     tcpip_open(app->net.tcpip, KERNEL_HANDLE, ETH_PHY_ADDRESS, ETH_AUTO);
 
-    app->net.io = io_create(504);
+    // ??? assume HTTP process will do the handling its own 80th standard port (I've seen this in webs.c), other ports we don't handle,
+    // so we don't need stuff for transport lower-level handling
+
+    // I didn't bother myself with stack size calculation and priority, so I pick whatever comes to my mind
+    // by the way, doc has "hs_create" instead of "web_server_create"
+    app->net.web = web_server_create(1024, 10);
+    web_server_open(app->net.web, 80, app->net.tcpip);
+
+    // this is for web server 
+    app->net.io = io_create(512);
+
+    web_server_create_node(app->net.web, WEB_ROOT_NODE, "index.html", WEB_FLAG(WEB_METHOD_GET) | WEB_FLAG(WEB_METHOD_POST));
+    app->net.get_count = 0;
+    app->net.current_value = 0;
 }
 
-static inline void ping_test(APP* app)
-{
-    SYSTIME uptime;
-    int i, success, total, cur;
-    success = 0;
-    total = 0;
-    printf("Starting ping test to ");
-    ip_print(&__HOST_IP);
-    printf("\n");
-    for (i = 0; i < PING_COUNT; ++i)
-    {
-        printf("Ping %d: ", i + 1);
-        get_uptime(&uptime);
-        if (icmp_ping(app->net.tcpip, &__HOST_IP))
-        {
-            cur = systime_elapsed_us(&uptime);
-            total += cur;
-            ++success;
-            printf("OK! (%d.%d ms)\n", cur / 1000, cur % 1000);
-        }
-        else
-            printf("Fail!\n");
-    }
-    total /= success;
-    printf("Ping test done. Success %d/%d(%d %%). Average time: %d.%d\n", success, PING_COUNT, (success * 100) / PING_COUNT, total / 1000, total % 1000);
-}
-
-static inline void ip_up(APP* app)
-{
-    printf("Network interface up\n");
-    ping_test(app);
-
-    app->net.listener = tcp_listen(app->net.tcpip, 23);
-    app->net.connection = INVALID_HANDLE;
-}
-
-static inline void ip_down(APP* app)
-{
-    printf("Network interface down\n");
-}
-
-static inline void ip_request(APP* app, IPC* ipc)
-{
-    switch (HAL_ITEM(ipc->cmd))
-    {
-    case IP_UP:
-        ip_up(app);
-        break;
-    case IP_DOWN:
-        ip_down(app);
-        break;
-    default:
-        error(ERROR_NOT_SUPPORTED);
-        break;
-    }
-}
-
-static inline void net_open(APP* app, HANDLE con)
-{
-    TCP_STACK* tcp_stack;
-    tcp_get_remote_addr(app->net.tcpip, con, &app->net.remote_addr);
-    printf("NET: got socket connection from ");
-    ip_print(&app->net.remote_addr);
-    printf("\n");
-    if (app->net.connection != INVALID_HANDLE)
-    {
-        printf("NET: already have connection\n");
-        tcp_close(app->net.tcpip, con);
-        return;
-    }
-    app->net.connection = con;
-    strcpy(io_data(app->net.io), "REx OS 0.3.9\n\r");
-    app->net.io->data_size = strlen(io_data(app->net.io));
-    tcp_stack = io_push(app->net.io, sizeof(TCP_STACK));
-    tcp_stack->flags = TCP_PSH;
-    tcp_write_sync(app->net.tcpip, app->net.connection, app->net.io);
-    tcp_read(app->net.tcpip, app->net.connection, app->net.io, 500);
-}
-
-static inline void net_close(APP* app)
-{
-    printf("NET: Closed socket connection from ");
-    ip_print(&app->net.remote_addr);
-    printf("\n");
-    app->net.connection = INVALID_HANDLE;
-}
-
-static inline void net_read_complete(APP* app, int size)
-{
-    int i;
-    uint8_t c;
-    if (size > 0)
-    {
-        printf("rx: ");
-        for (i = 0; i < app->net.io->data_size; ++i)
-        {
-            c = ((uint8_t*)io_data(app->net.io))[i];
-            if (c >= ' ' && c <= '~')
-                printf("%c", c);
-            else
-                printf("\\x%02x", c);
-        }
-        printf("\n");
-        //echo send
-        tcp_write_sync(app->net.tcpip, app->net.connection, app->net.io);
-        io_reset(app->net.io);
-        tcp_read(app->net.tcpip, app->net.connection, app->net.io, 500);
-    }
-}
-
-static inline void tcp_request(APP* app, IPC* ipc)
-{
-    switch (HAL_ITEM(ipc->cmd))
-    {
-    case IPC_OPEN:
-        net_open(app, (HANDLE)ipc->param1);
-        break;
-    case IPC_CLOSE:
-        net_close(app);
-        break;
-    case IPC_READ:
-        net_read_complete(app, (int)ipc->param3);
-        break;
-    default:
-        error(ERROR_NOT_SUPPORTED);
-        break;
-    }
-}
+int my_atoi(char *str) 
+{ 
+    int res = 0;
+    for (int i = 0; str[i] != '\0'; ++i) 
+        res = res*10 + str[i] - '0'; 
+    return res; 
+} 
 
 void net_request(APP* app, IPC* ipc)
 {
-    switch (HAL_GROUP(ipc->cmd))
+    unsigned int cmd = HAL_ITEM(ipc->cmd);
+    switch (cmd)
     {
-    case HAL_IP:
-        ip_request(app, ipc);
+        // Forms can be sent using get and post, but I cheat a little, asserting that refresh always uses GET, and edit always uses POST
+        // the assertion can be broken by the client
+        case WEBS_GET:
+        case WEBS_POST:
+        {
+            unsigned int hsession = ipc->param1;
+            unsigned int req_size = (unsigned int)ipc->param3;
+
+            // tecnhically I should identify the node, but I know I only have single node
+            unsigned int hnode = ipc->param2;         
+
+            if (WEBS_POST == cmd)
+            {
+                // I don't implement handling, e.g. no parameter, overflow in atoi
+                char *numstr = web_server_get_param(app->net.web, hsession, app->net.io, 512, "value");
+                app->net.current_value = my_atoi(numstr);
+            }
+
+            HS_STACK *desc = io_data(app->net.io);
+            char *str = (char*)(desc+1);
+            
+            app->net.io->data_size = strlen(str) + sizeof(HS_STACK);
+
+            sprintf(str, "<html><body><form action='index.html' method='POST'>value: <input type='number' name='value' value=%d><br>get count: %d<br><input type='submit' value='edit'></form></body></html>\n\r",
+                app->net.current_value,
+                ++app->net.get_count);
+
+            web_server_write_sync(app->net.web, hsession, WEB_RESPONSE_OK, app->net.io);
+        }
         break;
-    case HAL_TCP:
-        tcp_request(app, ipc);
-        break;
-    default:
-        error(ERROR_NOT_SUPPORTED);
+
+        default:
+            error(ERROR_NOT_SUPPORTED);
     }
 }

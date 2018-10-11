@@ -52,8 +52,8 @@
 
 #define USBD_IO_SIZE                                        128
 
-#define USBD_CDC_ACM_CLASS                                  1
-#define USBD_RNDIS_CLASS                                    0
+#define USBD_CDC_ACM_CLASS                                  0
+#define USBD_RNDIS_CLASS                                    1
 #define USBD_HID_KBD_CLASS                                  0
 #define USBD_CCID_CLASS                                     0
 #define USBD_MSC_CLASS                                      0
